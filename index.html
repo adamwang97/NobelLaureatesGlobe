@@ -1,0 +1,264 @@
+<html>
+	<head>
+		<title>Nobel Prize Visualization</title>
+		<link rel="stylesheet" type="text/css" href="style.css">
+	</head>
+	
+	<body>
+	
+		<div id="container"></div>
+		
+		<div id="title">
+			Visualization of Nobel Prize Laureates by Birth City
+		</div>
+		
+		<div id="desc">
+			Cities where all Nobel Prize Laureates are born are denoted by a colored data spike; if a city has more than
+			one laureate, the line extends further away from Earth.
+		</div>
+		
+		<div id="info">
+			<strong><a href="http://www.chromeexperiments.com/globe">Made using: WebGL Globe</a></strong> 
+			<span class="bull">&bull;</span>
+			 Created by: Adam Wang 
+			<span class="bull">&bull;</span>
+			Data acquired from 
+			<a href="https://www.nobelprize.org">Nobelprize.org</a>
+		</div>
+  
+  		<script type="text/javascript" src="globe.js"></script>
+		<script type="text/javascript" src="three.min.js"></script>
+		<script type="text/javascript" src="Tween.js"></script>
+
+		<script type="text/javascript">
+
+			// Where to put the globe?
+			var container = document.getElementById( 'container' );
+
+			// Make the globe
+			var globe = new DAT.Globe( container );
+			
+			// Going to ask the nobel prize API for the laureate data
+			var xhr1 = new XMLHttpRequest();
+			
+			// Stores the locations that need to be converted to lat/lng
+			var locations = [];
+			
+			// Associative array that maps a city to its latitude, longitude, and number of laureates 
+			var dict = {};
+			
+			// Stores the number of laureates that are left to be examined
+			var laureatesLeft = 0;
+			
+			// Where do we get the data?
+			xhr1.open( 'GET', 'http://api.nobelprize.org/v1/laureate.json?', true);
+
+			// What do we do when we have it?
+			xhr1.onreadystatechange = function(e) {
+
+				// If we've received the data
+				if ( xhr1.readyState === 4 && xhr1.status === 200 ) {
+
+					// Parse the JSON
+					var data = JSON.parse( xhr1.responseText );
+
+					laureatesLeft = data.laureates.length;
+					
+					// For each laureate found, it will parse the city and country
+					for (i=0; i < data.laureates.length; i++) {
+					
+						var laureate = data.laureates[i];
+
+						var city = laureate.bornCity;
+						var country = laureate.bornCountry;
+	
+						// Sometimes an institution is a recipient of a Nobel prize, which won't have a birth city
+						if (city != null && country != null) {
+						
+							// Makes sure the formatting is correct before storing the location
+							city = parseLocation(city);
+							country = parseLocation(country);
+							
+							var location = {city, country};
+						}
+						
+						// Store the location into an array
+						locations.push(location);
+					}
+					
+					// For each location, it will execute an HTTP request to get the lat/lng of each location
+					for (j=0; j < data.laureates.length; j++) {
+					
+						getCoordinates(locations[j]);
+					}
+				}
+			};
+			
+			// Begin request
+			xhr1.send( null ); 
+			
+			// Executes an HTTP request to query the google API for a location's latitude/longitude
+			function getCoordinates(location) {
+			
+				var xhr2 = new XMLHttpRequest();
+				
+				// Build the request URL
+				var url = 'https://maps.googleapis.com/maps/api/geocode/json?address=';
+				url += renameCity(location.city);
+				url += '+';
+				url += renameCountry(location.country);
+				url += '&key=AIzaSyDl-a1LPsTuuzEhB0nftTqA3tRi2CAYtOo';
+				
+				// Queries for the data
+				xhr2.open('GET', url, true);
+			
+				xhr2.onreadystatechange = function() {
+				
+					if (xhr2.readyState == 4 && xhr2.status == 200) {
+					
+						laureatesLeft--;
+						var loc = JSON.parse(xhr2.responseText);
+						
+						var lat = loc.results[0].geometry.location.lat;
+						var lng = loc.results[0].geometry.location.lng;
+						
+						// Stores the latitude and longitude into the associative array to be parsed
+						if (dict[lat + lng] != null) {
+			
+							// If the latitude and longitude exist, we just need to increase the number of laureates 
+							// born in that city
+							dict[lat + lng].size ++;
+						}
+						else {
+						
+							dict[lat + lng] = {lat, lng, size: 1};
+						}
+						
+						// We're ready to build the globe if there are no laureates left to examine
+						if (laureatesLeft == 0) {
+						
+							// Build the JSON message
+							var text = generateJSON();
+							var obj = JSON.parse(text);
+							
+							//add the data to the globe
+							globe.addData(obj, {format: 'magnitude', animated: true});
+							
+							// Create the geometry
+							globe.createPoints();
+							
+							// Creates the animation for the data spikes
+							new TWEEN.Tween(globe).to({time: 0},500).easing(TWEEN.Easing.Cubic.EaseOut).start();
+							TWEEN.start();
+							
+							// Begin animation
+							globe.animate();
+							
+							// Remove loading gif
+							document.body.style.backgroundImage = 'none'; 
+						}
+
+					} 
+				};
+				
+				// Begin request
+				xhr2.send(null);
+			}
+			
+			// I found some special cases where the Google API couldn't find the city requested, and this is
+			// usually due to some error in naming
+			function renameCity(city) {
+			
+				switch(city) {
+				
+					case 'Hofei, Anhwei':
+						return 'Hefei, Anhui';
+						break;
+					case 'Fleräng':
+						return 'Valbo';
+						break;
+					case '&#346;eteniai':
+						return 'Šeteniai';
+						break;
+					case 'Jankowa &#379;aga&#324;ska':
+						return 'Jankowa Żagańska';
+						break;
+					case 'Nam Ha province':
+						return 'Hà Nam Province';
+						break;
+					case 'Bad Salzbrunn':
+						return 'Szczawno-Zdrój';
+						break;
+					case 'Svartbjörnsbyn':
+						return 'Boden';
+						break;
+					case 'Casteldàwson':
+						return 'Castledawson';
+						break;
+					case 'Nitzkydorf, Banat':
+						return 'Nițchidorf';
+						break;
+					default:
+						return encodeURIComponent(city);
+				}
+			}
+			
+			// For the 14th Dalai Lama's birth country, Google only recognizes 'China', not 'People's Republic of China'!
+			function renameCountry (country) {
+								
+				if (country == 'People\'s Republic of China') {
+				
+					return 'China';	
+				}
+				
+				else {
+				
+					return encodeURIComponent(country);
+				}
+			}
+			
+			// Builds the JSON message that will create the points for the globe
+			function generateJSON () {
+			
+			    var text = '[';
+				
+				// Examines each city stored
+				for (var k in dict) {
+				
+					// Comma separator between elements
+					if (text.localeCompare('[') != 0) {
+					
+						text += ', ';
+					}
+					
+					text += dict[k].lat + ', ' + dict[k].lng + ', ' + (dict[k].size*.08);					
+				}
+				
+				text += ']';
+				return text;
+			}
+			
+			// Sometimes the city/country has to be reformatted from the Nobelprize's API
+			function parseLocation (loc) {
+			
+				var start = loc.indexOf('(');
+								
+				if (start != -1) {
+					
+					if (loc.indexOf('(now') != -1) {
+					
+						start += 5;
+					}
+					
+					var end = loc.indexOf(')');
+					return loc.substring(start, end);
+				}
+				
+				else {
+				
+					return loc;
+				}
+			}
+		</script>
+	</body>
+</html>
